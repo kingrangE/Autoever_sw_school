@@ -300,7 +300,7 @@ CREATE [TEMPORARAY] TABLE [IF NOT EXIST] 테이블명(
         )ENGINE = MyISAM AUTO_INCREMENT = 1 DEFAULT CHARSET=utf8mb4; -- AUTO_INCREMENT =1로 시작지점 설정(1이 디폴트값이라 안해도 됨)
         ```
 - 내가 만든 예시
-    - 조건
+    - 조건 
         1. 
 
 ### 테이블 수정
