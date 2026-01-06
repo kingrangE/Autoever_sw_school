@@ -534,129 +534,175 @@ EXPIRE name 10 # 10초뒤 name 키 삭제
             3. 소비자 상태 추적 : 그룹 내 소비자가 각 작업을 어디까지 처리했는지 파악 가능
 
 ## Redis에서 키를 관리하는 방법
-1. 키의 자동 생성과 삭제
-    - 키가 존재하지 않을 때, 아이템을 넣으면 아이템 삽입 전에 빈 자료구조를 생성한다.
-        - 그래서 이미 다른 자료구조로 생성한 키에 다른 자료를 저장하려하면 에러가 발생한다.
-            ```bash
-            SET name "kilwon"
-            LPUSH name 1 2 3  #에러 발생 name은 문자열 저장함
-            ```
-            - 문자열 제외, 문자열은 Redis에서 가장 강하기에 다른 자료구조에 적용시 그대로 덮어써진다.
-        - `No-SQL 구조`이므로 `Mongo DB와 같음` (없으면 만들고 넣고, 있으면 있는데다가 넣음)
-            - 그래서 `자료구조마다 명령어가 다 다름.`(구분을 해야하기 때문)
-            - `Reids`에서는 그래서 `자료구조에 대한 이해가 굉장히 중요`하다.
-                - "데이터를 어떻게 저장해서 어떻게 사용할 것이냐"
-    - 모든 아이템을 삭제하면 키도 자동으로 삭제되는데 stream은 예외
-        - 키의 존재여부는 EXISTS로 확인 가능 
-    - 실습해보기 -> 키가 없는 상태에서 키 삭제, 아이템 삭제, 자료구조 크기 조회 
-        - 에러가 아니라 키는 있으나 데이터가 없는 것처럼 동작
-
-2. Key 관련 명령
-    - 단점 : 키가 무수히 많은 상황에서 수행하게 되면, `모든 키의 정보를 반환`함
-        - Redis는 `Single Thread 기반`이라서, `실행 시간`이 `오래 걸리는 커맨드를 수행`하면 `다른 모든 커맨드가 차단`된다.
-        - 이렇게 오래 걸리는 명령을 Redis에 수행하게 되면, 다른 Client에서 Redis에 데이터를 저장할 수 없고, 대기열이 늘어날 수 있다. 또한, 모니터링 도구가 마스터 노드로 보낸 health check에 응답할 수 없어서 의도하지 않은 fail-over가 발생할 수 있다.
-        
-    - 존재 여부 확인 : `EXISTS`
+### 키의 `자동 생성`/`삭제`
+- 키가 존재하지 않을 때
+    - 아이템 삽입 전에 `빈 자료구조를 생성`한다.
+    - `No-SQL 구조`이므로 `Mongo DB와 같음` (없으면 만들고 넣고, 있으면 있는데다가 넣음)
+        - 그래서 `자료구조마다 명령어가 다 다름.`(`자료구조 구분`을 해야하기 때문)
+        - `Reids`에서는 그래서 `자료구조에 대한 이해가 굉장히 중요`하다.
+            - "데이터를 어떻게 저장해서 어떻게 사용할 것이냐"
+- `모든 아이템을 삭제`하면 `키도 자동 삭제`(Stream은 예외)
+    - 키의 존재여부는 `EXISTS로 확인 가능`
+  
         ```bash
-        EXISTS KEY(여러개 가능)
-        ```
-        ```bash
-        EXISTS name id addr # name, id, addr 키가 존재하는지 확인
-        ```
-    - 패턴을 가지고 일치하는 패턴의 키를 조회 : `KEYS`
-        ```bash
-        KEYS 패턴
-        ```
-        ```bash
-         # * : 글자 수 상관없는 와일드 카드
-        KEYS * # 모든 키 조회
-        ```
-        ```bash
-         # ? : 와일드카드 (1글자 매칭)
-        KEYS ki?won #kilwon kiqwon kinwon ... ?엔 개수가 맞는 아무 문자나 들어가도 매칭된다.
-        ```
-        ```bash
-         # []안에 나열하면 그 중 하나가 된다.
-        KEYS ki[lL]won # kilwon, kiLwon과 매칭
-        ```
-        ```bash
-         # ^는 제외의 의미 
-        KEYS [^abcdefg]hi #ahi~ghi는 매칭 안됨
-        ```
-
-3. SCAN 
-    - KEY대신 쓰면 좋은 조회 커맨드
-    - 커서를 기반으로 특정 범위의 키만 조회한다.
-    ```bash
-    SCAN cursor [MATCH pattern][COUNT count][TYPE type]
-    ```
-    - SCAN return값 : 다음 cursor의 위치
-    - 기본적(COUNT 생략)으로 10개의 key 반환
+        EXISTS 키 
+         # 없으면 (integer) 0
+         # 있으면 (integer) 1
+        ``` 
+### 키 관련 명령어
+#### `패턴 일치하는 모든 키 조회` : KEYS
+```bash
+KEYS 패턴
+```
+```bash
+# * : 글자 수 상관없는 와일드 카드
+KEYS * # 모든 키 조회
+# 127.0.0.1:6379> KEYS *
+# 1) "test_1"
+# 2) "test_list2"
+# 3) "test_sortedset"
+# 4) "test_list"
+# 5) "test_2"
+```
+```bash
+# ? : 와일드카드 (1글자 매칭)
+KEYS test_?
+# 1) "test_1"
+# 2) "test_2"
+```
+```bash
+# []안에 나열하면 그 중 하나가 된다.
+KEYS test_[l1]* #test_ 뒤에 l 또는 1이 오고 그 뒤에는 아무거나 
+# 1) "test_1"
+# 2) "test_list2"
+# 3) "test_list"
+```
+```bash
+# ^는 제외의 의미 
+KEYS test_[^l1]* # test_ 뒤에 1또는 l이 오지 않는 모든 것
+# 1) "test_sortedset"
+# 2) "test_2"
+```
+- `KEYS *` 단점 : 키가 무수히 많은 상황에서 수행하게 되면, `모든 키의 정보를 반환`함
+    - Redis는 `Single Thread 기반`이라서, `실행 시간`이 `오래 걸리는 커맨드를 수행`하면 `다른 모든 커맨드가 차단`된다.
+        - 문제점 
+            1. 다른 Client가 Redis에 `데이터 저장 불가` (`대기열 증가`)
+            2. 모니터링 도구의 `health check에 응답 불가` (의도치 않은 `fail-over 발생`)
+  
+#### `존재 여부 확인` : EXISTS
+```bash
+EXISTS KEY(여러개 가능)
+```
+```bash
+EXISTS name id addr # name, id, addr 키가 존재하는지 확인 -> 존재하는 키의 개수만큼 return
+```
     
-4. SORT
-    - list, set, sorted set에서만 사용할 수 있는 커맨드
-    - 키 내부의 아이템을 정렬해서 반환
-    - LIMIT 옵션을 이용해서 원하는 개수만큼 반환 가능
-    - ASC와 DESC를 이용해서 오름차순, 내림차순 설정 가능
-    - 숫자와 문자열이 섞인 경우, ALPHA 옵션을 이용해서 문자열로 변환해서 정렬한다.
-    ```bash
-    DEL mylist
-    LPUSH mylist c
-    LPUSH mylist a
-    LPUSH mylist b
-    SORT mylist # ERROR
-    LPUSH mylist HELLO
-    SORT mylist alpha # 뒤에 alpha를 붙여주면 정렬이 된다.
-    ```
-4. 키 이름 변경
-    ```bash
-    RENAME 기존키 새로운키
-    ```
-    ```bash
-    SET name "kilwon"
-    RENAME name kilwonname
-    GET kilwonname
-    ```
-5. 키 복제
-    ```bash
-    COPY source destination [REPLACE]
-     #키가 존재하면 에러인데, REPLACE 옵션을 사용하면, 기존의 키를 지우고 생성해서 복제
-    ```
-    ```bash
-    SET B BANANA
-    COPY B BB  #없노 ㅅㅂ
-    GET B # RENAME과 다르게 원본 값이 사라지지 않는다.
-    ```
+#### `범위 키 조회` : SCAN 
+- KEY 대신 쓰면 좋은 조회 커맨드
+- `커서를 기반`으로 `특정 범위의 키만 조회`한다.
+```bash
+SCAN cursor [MATCH pattern][COUNT count][TYPE type]
+```
+- `파라미터`
+    - `cursor` : `조회 시작 idx` (0으로 설정 시, 처음부터 조회 시작)
+    - `MATCH` : `특정 패턴`에 맞는 키만 `필터링`하기 위한 `패턴 명시`
+    - `COUNT` : `한 번의 iteration`에서 `반환할 데이터의 개수` (생략 시, 10)
+    - `TYPE` : 특정 데이터 타입 명시
+- `return값` : `다음 cursor`의 위치
+- 예시
 
-6. TYPE
-    - 자료구조 확인
     ```bash
-    TYPE key이름 
+    SCAN 0 
+    # 1) "0"
+    # 2) 1) "test_1"
+    #    2) "test_list2"
+    #    3) "test_sortedset"
+    #    4) "test_list"
+    #    5) "test_2"
     ```
+    - 결과의 1 부분이 다음 cursor의 위치
+        - 0으로 표시되었다는 것은 조회가 끝났다는 것이다.
     ```bash
-    TYPE name # name 키의 자료구조가 출력된다.
-    ```
+    SCAN 0 COUNT 2 # 0부터 시작해서 0,1,2 보여달라
 
-7. 키 전체 삭제
-    ```bash
-    FLUSHALL [ASYNC/SYNC]
+    # 1) "4" -> 다음 커서 위치 4 즉, 이어서 읽고싶으면 다음엔 SCAN 4로 읽어라
+    # 2) 1) "test_1" # 0
+    #    2) "test_list2" # 1
+    #    3) "test_sortedset" # 2
     ```
+#### `Value 정렬` : SORT
+- `list, set, sorted set`에서만 `사용가능`
+- `키에 대응되는 Value`를 `정렬하여 반환`
+- `OPTIONS`
+    - `LIMIT` : 원하는 개수만큼 반환
+    - `ASC/DESC` : 오름차순, 내림차순
+    - `ALPHA` : 문자열로 변환해서 정렬
+```bash
+LPUSH mylist c # [c]
+LPUSH mylist a # [a,c]
+LPUSH mylist b # [b,a,c]
+SORT mylist # ERROR : 그냥 정렬하면 에러
+LPUSH mylist HELLO # ["HELLO",b,a,c] 
+SORT mylist alpha # 1) "HELLO" 2) "a" 3) "b" 4) "c" # 대문자가 앞, 소문자가 뒤 (아스키코드)
+```
 
-8. 키 삭제(동기식)
-    ```bash
-    DEL 키
-    ```
+#### `키 이름 변경` : RENAME
+```bash
+RENAME 기존키 새로운키
+```
+```bash
+SET name "kilwon"
+RENAME name kilwonname
+GET kilwonname
+```
+#### `키 복제` : COPY
+- 6.2부터 생긴 기능
+```bash
+COPY source destination [REPLACE]
+#키가 존재하면 에러인데, REPLACE 옵션을 사용하면, 기존의 키를 지우고 생성해서 복제
+```
+```bash
+SET B BANANA
+COPY B BB  
+GET B # RENAME과 다르게 원본 값이 사라지지 않는다.
+```
 
-9. 키 연결 해제 (키 삭제랑 먼 차이노)(비동기식)
-    ```bash
-    UNLINK 키
-    ```
+#### `자료구조 확인` : TYPE
+```bash
+TYPE key이름 
+```
+```bash
+TYPE name # name 키의 자료구조가 출력된다.
+```
 
-10. 키의 만료시간 확인
-    ```bash
-    TTL 키
-    ```
-    - 유효시간 없으면 -1, 키가 없으면 -2 반환
+#### `키 전체 삭제` : FLUSHALL
+```bash
+FLUSHALL [ASYNC/SYNC]
+```
+
+#### `키 삭제` : DEL / UNLINK
+```bash
+DEL 키
+```
+```bash
+UNLINK 키
+```
+- 둘의 차이 : 동기/비동기
+    - DEL은 `동기식`, UNLINK는 `비동기식`이다.
+        - 즉, DEL은 삭제 작업을 요청하면 Redis의 Main Thread를 막아 작업을 진행한다. (삭제가 완료될 때까지 Thread가 멈춘다.)
+        - UNLINK는 비동기적으로 `KeySpace`에서 먼저 키를 제거(Client는 Key가 사라진 것으로 인식), 실제 `데이터를 메모리에서 해제`하는 작업(무거움)은 `백그라운드 스레드에서 진행`
+
+
+
+#### `키의 만료시간 확인` : TTL
+```bash
+TTL 키
+```
+- EXPIRE로 설정한 만료 시간을 확인하는 명령어
+- Return
+    1. 유효시간
+        - 유효시간 없으면 -1
+    2. 키가 없으면 -2 
 
 # 참고
 1. Key-Value 라는 용어가 나올 때 같이 생각하는 자료구조
@@ -665,3 +711,13 @@ EXPIRE name 10 # 10초뒤 name 키 삭제
         - Key => set으로 생성 (중복 없음->Upsert 구조로 동작)
             - Key는 통상적으로 `String으로 제작`함
                 - ex, int 형인 경우, 그냥 List로 만들면 더 쉬움
+2. Sentinel과 Data 저장소 하드웨어
+    - Sentinel (제어 도구) 
+        - 알고리즘 계산을 위해 `CPU`와 `Memory` 많이 할당
+    - 데이터 저장소
+        - 저장을 하므로 `디스크 공간 크게 할당`
+3. Istio - 토스가 쓰는거
+    - 나중에 프로젝트 때 써보기
+4. Proxy, 방화벽
+    - 방화벽 : InBound(외부 네트워크에서 내부 네트워크로 들어오는 것)을 막음
+    - Proxy : OutBound(내부 네트워크에서 외부 네트워크로 나가는 것)을 막음
